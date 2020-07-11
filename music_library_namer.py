@@ -12,8 +12,8 @@ from mutagen.mp3 import BitrateMode
 logger = logging.getLogger('filetransfer')
 logfilehandler = logging.FileHandler('pathnamer.log', encoding='utf-8')
 logformatter = logging.Formatter(u'%(asctime)s [%(levelname)s] %(message)s')
-logger.addHandler(logfilehandler)
 logger.addHandler(logging.StreamHandler(sys.stdout))
+logger.addHandler(logfilehandler)
 logger.setLevel(logging.INFO)
 logfilehandler.setFormatter(logformatter)
 
@@ -55,14 +55,16 @@ class TagChalice(dict):
         if 'mp3' in self.audiofile.mime[0]:
             if self['tracknumber'] is not None and '/' in self['tracknumber']:
                 temp = self['tracknumber'].split('/', 2)
+                # print(temp)
                 self['tracknumber'] = int(temp[0])
                 self['totaltracks'] = int(temp[1])
             if self['discnumber'] is not None and '/' in self['discnumber']:
                 temp = self['discnumber'].split('/', 2)
+                # print(temp)
                 self['discnumber'] = int(temp[0])
                 self['totaldiscs'] = int(temp[1])
 
-        elif 'flac' in self.audiofile.mime[0]:
+        elif 'flac' in self.audiofile.mime[0] or 'ogg' in self.audiofile.mime[0]:
             self['tracknumber'] = 0 if self['tracknumber'] is None else int(self['tracknumber'])
             self['totaltracks'] = 0 if self['totaltracks'] is None else int(self['totaltracks'])
             self['discnumber'] = 0 if self['discnumber'] is None else int(self['discnumber'])
@@ -72,9 +74,11 @@ class TagChalice(dict):
             custom_tags = ['originaldate', 'media', 'musicbrainz_albumid', 'catalognumber']
 
             if self['discnumber'] is not None:
+                # print(self['discnumber'])
                 self['totaldiscs'] = int(self['discnumber'][1])
                 self['discnumber'] = int(self['discnumber'][0])
             if self['tracknumber'] is not None:
+                # print(self['tracknumber'])
                 self['totaltracks'] = int(self['tracknumber'][1])
                 self['tracknumber'] = int(self['tracknumber'][0])
 
@@ -115,10 +119,10 @@ class InfoChalice(dict):
         self.audiofile = audiofile
         self['mime'] = self.audiofile.mime[0]
         self['pretty_mime'] = None
-        self['bitrate'] = self.audiofile.info.bitrate
-        self['pretty_bitrate'] = bitrateformatter(self['bitrate'] / 1000)
-        self['samplerate'] = float(self.audiofile.info.sample_rate)
-        self['pretty_samplerate'] = sampleformatter(self['samplerate'])
+        self['bitrate'] = None
+        self['pretty_bitrate'] = None
+        self['samplerate'] = None
+        self['pretty_samplerate'] = None
         self['encoder_settings'] = None
         self['bitrate_mode'] = None
         self['pretty_bitrate_mode'] = None
@@ -129,7 +133,11 @@ class InfoChalice(dict):
     def fixmapping(self):
         if 'mp3' in self['mime']:
             self['pretty_mime'] = 'mp3'
+            self['bitrate'] = self.audiofile.info.bitrate
+            self['pretty_bitrate'] = bitrateformatter(self['bitrate'] / 1000)
             self['bitrate_mode'] = self.audiofile.info.bitrate_mode
+            self['samplerate'] = float(self.audiofile.info.sample_rate)
+            self['pretty_samplerate'] = sampleformatter(self['samplerate'])
             self['encoder_settings'] = self.audiofile.info.encoder_settings
             if self['bitrate_mode'] == BitrateMode.CBR \
                     or (self['bitrate_mode'] == BitrateMode.UNKNOWN and self['pretty_bitrate'] % 32 == 0):
@@ -146,11 +154,19 @@ class InfoChalice(dict):
 
         elif 'flac' in self['mime']:
             self['pretty_mime'] = 'flac'
+            self['bitrate'] = self.audiofile.info.bitrate
+            self['pretty_bitrate'] = bitrateformatter(self['bitrate'] / 1000)
+            self['samplerate'] = float(self.audiofile.info.sample_rate)
+            self['pretty_samplerate'] = sampleformatter(self['samplerate'])
             self['bps'] = self.audiofile.info.bits_per_sample
 
         elif 'mp4' in self['mime']:
             self['pretty_mime'] = self.audiofile.info.codec if self.audiofile.info.codec != 'mp4a.40.2' else 'aac-lc'
+            self['bitrate'] = self.audiofile.info.bitrate
+            self['pretty_bitrate'] = bitrateformatter(self['bitrate'] / 1000)
             self['bps'] = self.audiofile.info.bits_per_sample
+            self['samplerate'] = float(self.audiofile.info.sample_rate)
+            self['pretty_samplerate'] = sampleformatter(self['samplerate'])
             self['encoder_settings'] = tagchooser(self.audiofile, '©too')
             if self['encoder_settings'] is not None:
                 parse_encoder = self['encoder_settings'].upper()
@@ -160,6 +176,12 @@ class InfoChalice(dict):
                     self['pretty_bitrate_mode'] = 'CVBR'
                 elif 'NERO' in parse_encoder and self['pretty_bitrate'] % 32 != 0:
                     self['pretty_bitrate_mode'] = 'NeroVBR'
+
+        elif 'ogg' in self['mime']:
+            if str(type(self.audiofile).__name__) == 'OggOpus':
+                self['pretty_mime'] = 'opus'
+            else:
+                self['pretty_mime'] = 'ogg'
 
 
 def sanitise(node):
@@ -258,6 +280,10 @@ def formatter(filetags, fileinfo):
         else:
             encoding = '{} - {}'.format(fileinfo['pretty_mime'].upper(), fileinfo['pretty_bitrate'])
 
+    # Opus specific settings
+    elif fileinfo['pretty_mime'] == 'opus':
+        encoding = '{}'.format(fileinfo['pretty_mime'].upper())
+
     # Disc handling
     if filetags['discsubtitle'] is not None:
         disc = str(filetags['discnumber']) + ' - ' + bytetostr(filetags['discsubtitle'])
@@ -282,6 +308,8 @@ def formatter(filetags, fileinfo):
         tempext = fileinfo['mime'].split('/')[1]
         if tempext == 'mp4':
             ext = '.m4a'
+        elif tempext == 'ogg':
+            ext = '.' + fileinfo['pretty_mime']
         else:
             ext = '.' + tempext
 
@@ -313,6 +341,10 @@ def trackparser(filepath, destroot, dryflag):
     audiofile = mutagen.File(filepath)
     fileinfo.populate(audiofile)
     filetags.populate(audiofile)
+    # pprint(audiofile.tags)
+    # pprint(fileinfo)
+    # pprint(filetags)
+    # print(fileinfo['samplerate'])
     filepathroot = os.path.dirname(__file__).replace('/', '\\')
     filepath = os.path.join(filepathroot, filepath)
     artistdir, albumdir, filename = formatter(filetags, fileinfo)
@@ -330,7 +362,7 @@ def trackparser(filepath, destroot, dryflag):
 
 
 def rootiterator(rootpath, dest, dryflag):
-    allowedexts = ['mp3', 'flac', 'm4a']
+    allowedexts = ['mp3', 'flac', 'm4a', 'opus']
     for root, subdirs, files in os.walk(rootpath):
         for filename in files:
             for ext in allowedexts:
