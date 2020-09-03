@@ -10,8 +10,8 @@ import mutagen
 from mutagen.mp3 import BitrateMode
 
 logger = logging.getLogger('filetransfer')
-logfilehandler = logging.FileHandler('pathnamer.log', encoding='utf-8')
-logformatter = logging.Formatter(u'%(asctime)s [%(levelname)s] %(message)s')
+logfilehandler = logging.FileHandler('music_library_namer.log', encoding='utf-8')
+logformatter = logging.Formatter(u'%(asctime)s %(name)-10s %(levelname)-8s %(message)s')
 logger.addHandler(logging.StreamHandler(sys.stdout))
 logger.addHandler(logfilehandler)
 logger.setLevel(logging.INFO)
@@ -26,6 +26,7 @@ class TagChalice(dict):
         super().__init__()
 
     def populate(self, audiofile):
+
         self.audiofile = audiofile
         self['title'] = tagchooser(self.audiofile, 'TIT2', '©nam', 'TITLE')
         self['artist'] = tagchooser(self.audiofile, 'TPE1', '©ART', 'ARTIST')
@@ -41,9 +42,9 @@ class TagChalice(dict):
                                           '----:com.apple.iTunes:originaldate', 'ORIGINALDATE')
         self['year'] = '0000'
         self['media'] = tagchooser(self.audiofile, 'TMED', '----:com.apple.iTunes:MEDIA', 'MEDIA')
-        self['pretty_media'] = 'Other'
-        self['catalognumber'] = tagchooser(self.audiofile, 'TXXX:CATALOGNUMBER', '----:com.apple.iTunes:CATALOGNUMBER',
-                                           'CATALOGNUMBER')
+        self['pretty_media'] = 'OTHER'
+        self['catalog'] = tagchooser(self.audiofile, 'TXXX:CATALOGNUMBER', '----:com.apple.iTunes:CATALOGNUMBER',
+                                     'CATALOGNUMBER')
         self['musicbrainz_albumid'] = tagchooser(self.audiofile, 'TXXX:MusicBrainz Album Id',
                                                  '----:com.apple.iTunes:MusicBrainz Album Id', 'MUSICBRAINZ_ALBUMID')
         self['displayartist'] = 'Unknown Artist'
@@ -64,14 +65,22 @@ class TagChalice(dict):
                 self['discnumber'] = int(temp[0])
                 self['totaldiscs'] = int(temp[1])
 
+            if self['originaldate'] is not None:
+                self['year'] = str(self['originaldate'])[0:4]
+            elif self['date'] is not None:
+                self['year'] = str(self['date'])[0:4]
+
         elif 'flac' in self.audiofile.mime[0] or 'ogg' in self.audiofile.mime[0]:
             self['tracknumber'] = 0 if self['tracknumber'] is None else int(self['tracknumber'])
             self['totaltracks'] = 0 if self['totaltracks'] is None else int(self['totaltracks'])
             self['discnumber'] = 0 if self['discnumber'] is None else int(self['discnumber'])
             self['totaldiscs'] = 0 if self['totaldiscs'] is None else int(self['totaldiscs'])
 
+            if self['date'] is not None:
+                self['year'] = str(self['date'])[0:4]
+
         elif 'mp4' in self.audiofile.mime[0]:
-            custom_tags = ['originaldate', 'media', 'musicbrainz_albumid', 'catalognumber']
+            custom_tags = ['originaldate', 'media', 'musicbrainz_albumid', 'catalog']
 
             if self['discnumber'] is not None:
                 # print(self['discnumber'])
@@ -82,6 +91,11 @@ class TagChalice(dict):
                 self['totaltracks'] = int(self['tracknumber'][1])
                 self['tracknumber'] = int(self['tracknumber'][0])
 
+            if self['originaldate'] is not None:
+                self['year'] = bytetostr(self['originaldate'])[0:4]
+            elif self['date'] is not None:
+                self['year'] = bytetostr(self['date'])[0:4]
+
             for custom_tag in custom_tags:
                 if self[custom_tag] is not None:
                     self[custom_tag] = self[custom_tag].decode('utf-8')
@@ -89,19 +103,22 @@ class TagChalice(dict):
         if self['albumartist'] is not None or self['artist'] is not None:
             self['displayartist'] = self['albumartist'] if self['albumartist'] is not None else self['artist']
 
-        # Map year in YYYY format
-        if self['originaldate'] is not None:
-            self['year'] = str(self['originaldate'])[0:4]
-        elif self['date'] is not None:
-            self['year'] = str(self['date'])[0:4]
-
         if self['media'] is not None:
             if 'CD' in self['media']:
                 self['pretty_media'] = 'CD'
             elif 'Digital' in self['media']:
-                self['pretty_media'] = 'Web'
+                self['pretty_media'] = 'WEB'
             elif 'Vinyl' in self['media']:
-                self['pretty_media'] = 'Vinyl'
+                self['pretty_media'] = 'VNL'
+            elif 'Cassette' in self['media']:
+                self['pretty_media'] = 'CST'
+            elif 'DVD' in self['media']:
+                self['pretty_media'] = 'DVD'
+            elif 'GameRip' in self['media']:
+                self['pretty_media'] = 'VGR'
+
+        if not self['catalog'] or self['catalog'] == '[none]':
+            self['catalog'] = 'No Cat#'
 
         for tag in ['tracknumber', 'totaltracks', 'discnumber', 'totaldiscs']:
             if self[tag] is None:
@@ -116,6 +133,7 @@ class InfoChalice(dict):
         super().__init__()
 
     def populate(self, audiofile):
+
         self.audiofile = audiofile
         self['mime'] = self.audiofile.mime[0]
         self['pretty_mime'] = None
@@ -131,6 +149,7 @@ class InfoChalice(dict):
         self.fixmapping()
 
     def fixmapping(self):
+
         if 'mp3' in self['mime']:
             self['pretty_mime'] = 'mp3'
             self['bitrate'] = self.audiofile.info.bitrate
@@ -200,7 +219,20 @@ def sanitise(node):
     return phase_four.strip(' ')
 
 
+def truncate(node, charlimit):
+
+    if len(node) > charlimit:
+        if ' ' in node:
+            trunc = node.rsplit(' ', 1)[0]
+        else:
+            trunc = node[0:charlimit]
+        return truncate(trunc, charlimit)
+
+    return node
+
+
 def tagchooser(audiofile, *args):
+
     value = None
 
     for val in args:
@@ -215,6 +247,7 @@ def tagchooser(audiofile, *args):
 
 
 def bytetostr(data):
+
     try:
         data = data.decode()
     except (UnicodeDecodeError, AttributeError):
@@ -253,9 +286,12 @@ def formatter(filetags, fileinfo):
     albumdir = ''
     trackpath = ''
 
+    catalog = ''
     encoding = ''
     track = ''
     disc = ''
+
+    trunc_charlimit = 80
 
     # MP3 specific settings
     if fileinfo['pretty_mime'] == 'mp3':
@@ -272,6 +308,7 @@ def formatter(filetags, fileinfo):
     elif fileinfo['pretty_mime'] == 'flac' or fileinfo['pretty_mime'] == 'alac':
         encoding = '{} - {}-{}'.format(fileinfo['pretty_mime'].upper(),
                                        str(fileinfo['bps']), fileinfo['pretty_samplerate'])
+        catalog = ' {{{}}}'.format(filetags['catalog'])
 
     # AAC specific settings
     elif fileinfo['pretty_mime'] == 'aac-lc':
@@ -286,7 +323,7 @@ def formatter(filetags, fileinfo):
 
     # Disc handling
     if filetags['discsubtitle'] is not None:
-        disc = str(filetags['discnumber']) + ' - ' + bytetostr(filetags['discsubtitle'])
+        disc = '{} - {}'.format(filetags['discnumber'], truncate(bytetostr(filetags['discsubtitle']), trunc_charlimit))
     elif filetags['totaldiscs'] > 5:
         disc = 'Disc ' + str(filetags['discnumber'])
     else:
@@ -304,6 +341,7 @@ def formatter(filetags, fileinfo):
 
     # Extension determining
     ext = ''
+
     if 'audio' in fileinfo['mime']:
         tempext = fileinfo['mime'].split('/')[1]
         if tempext == 'mp4':
@@ -314,22 +352,30 @@ def formatter(filetags, fileinfo):
             ext = '.' + tempext
 
     # File path merge
-    albumdir = "[{}] {} [{} - {}]".format(filetags['year'], filetags['album'],
-                                          filetags['pretty_media'].upper(), encoding)
-    tracknodisc = sanitise("{} - {}".format(track, filetags['title']))
+    artistdir = sanitise(truncate(artistdir, trunc_charlimit))
+    albumdirpre = '{} - {}'.format(artistdir, truncate(filetags['album'], trunc_charlimit))
+    albumdir = "{} ({}) [{} - {}]{}".format(albumdirpre, filetags['year'], filetags['pretty_media'], encoding, catalog)
+    tracknodisc = "{} - {}".format(track, truncate(filetags['title'], trunc_charlimit))
+
+    while len(artistdir + albumdir + disc + tracknodisc) > 230:
+
+        words = tracknodisc.split(' - ', maxsplit=1)[1].split(r'\w')
+        if len(words) == 1 and len(words[0]) <= 10:
+            break
+
+        trunc_charlimit = trunc_charlimit - 5
+        tracknodisc = truncate(tracknodisc, trunc_charlimit)
 
     if disc == '0' or filetags['totaldiscs'] == 1:
-        trackpath = tracknodisc
+        trackpath = sanitise(tracknodisc)
         albumdir = sanitise(albumdir)
     elif 'Disc' in disc or filetags['discsubtitle'] is not None:
         disc = sanitise(disc)
         albumdir = os.path.join(sanitise(albumdir), sanitise(disc))
-        trackpath = tracknodisc
+        trackpath = sanitise(tracknodisc)
     else:
-        trackpath = sanitise("{} - {}".format(disc, tracknodisc))
+        trackpath = sanitise("{}.{}".format(disc, tracknodisc))
         albumdir = sanitise(albumdir)
-
-    artistdir = sanitise(artistdir)
 
     return artistdir, albumdir, trackpath + ext
 
@@ -341,14 +387,13 @@ def trackparser(filepath, destroot, dryflag):
     audiofile = mutagen.File(filepath)
     fileinfo.populate(audiofile)
     filetags.populate(audiofile)
-    # pprint(audiofile.tags)
     # pprint(fileinfo)
     # pprint(filetags)
-    # print(fileinfo['samplerate'])
     filepathroot = os.path.dirname(__file__).replace('/', '\\')
     filepath = os.path.join(filepathroot, filepath)
     artistdir, albumdir, filename = formatter(filetags, fileinfo)
     dest = os.path.join(filepathroot, destroot, artistdir, albumdir, filename)
+
     if os.path.isfile(dest):
         logger.warning('File already exists: ' + dest)
     else:
@@ -362,7 +407,9 @@ def trackparser(filepath, destroot, dryflag):
 
 
 def rootiterator(rootpath, dest, dryflag):
+
     allowedexts = ['mp3', 'flac', 'm4a', 'opus']
+
     for root, subdirs, files in os.walk(rootpath):
         for filename in files:
             for ext in allowedexts:
@@ -373,6 +420,7 @@ def rootiterator(rootpath, dest, dryflag):
 
 
 def main():
+
     parser = argparse.ArgumentParser(description='Tool for library structuring')
     parser.add_argument('src', type=str, help='Source dir')
     parser.add_argument('dest', type=str, help='Destination dir')
