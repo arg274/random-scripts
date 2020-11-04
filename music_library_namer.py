@@ -28,25 +28,25 @@ class TagChalice(dict):
     def populate(self, audiofile):
 
         self.audiofile = audiofile
-        self['title'] = tagchooser(self.audiofile, 'TIT2', '©nam', 'TITLE')
-        self['artist'] = tagchooser(self.audiofile, 'TPE1', '©ART', 'ARTIST')
-        self['album'] = tagchooser(self.audiofile, 'TALB', '©alb', 'ALBUM')
-        self['albumartist'] = tagchooser(self.audiofile, 'TPE2', 'aART', 'ALBUMARTIST')
-        self['tracknumber'] = tagchooser(self.audiofile, 'TRCK', 'trkn', 'TRACKNUMBER')
+        self['title'] = tagchooser(self.audiofile, 'TIT2', 'TITLE', '©nam')
+        self['artist'] = tagchooser(self.audiofile, 'TPE1', 'ARTIST', '©ART')
+        self['album'] = tagchooser(self.audiofile, 'TALB', 'ALBUM', '©alb')
+        self['albumartist'] = tagchooser(self.audiofile, 'STDALBUMARTIST', 'TPE2', 'ALBUMARTIST', 'aART')
+        self['tracknumber'] = tagchooser(self.audiofile, 'TRCK', 'TRACKNUMBER', 'trkn')
         self['totaltracks'] = tagchooser(self.audiofile, 'TRACKTOTAL', 'TOTALTRACKS')
-        self['discnumber'] = tagchooser(self.audiofile, 'TPOS', 'disk', 'DISCNUMBER')
+        self['discnumber'] = tagchooser(self.audiofile, 'TPOS', 'DISCNUMBER', 'disk')
         self['totaldiscs'] = tagchooser(self.audiofile, 'DISCTOTAL', 'TOTALDISCS')
-        self['discsubtitle'] = tagchooser(self.audiofile, 'TSST', '----:com.apple.iTunes:DISCSUBTITLE', 'DISCSUBTITLE')
-        self['date'] = tagchooser(self.audiofile, 'TDRC', 'TYER', '©day', 'DATE')
-        self['originaldate'] = tagchooser(self.audiofile, 'TDOR', 'TORY',
-                                          '----:com.apple.iTunes:originaldate', 'ORIGINALDATE')
+        self['discsubtitle'] = tagchooser(self.audiofile, 'TSST', 'DISCSUBTITLE', '----:com.apple.iTunes:DISCSUBTITLE')
+        self['date'] = tagchooser(self.audiofile, 'TDRC', 'TYER', 'DATE', '©day')
+        self['originaldate'] = tagchooser(self.audiofile, 'TDOR', 'TORY', 'ORIGINALDATE',
+                                          '----:com.apple.iTunes:originaldate')
         self['year'] = '0000'
-        self['media'] = tagchooser(self.audiofile, 'TMED', '----:com.apple.iTunes:MEDIA', 'MEDIA')
+        self['media'] = tagchooser(self.audiofile, 'TMED', 'MEDIA', '----:com.apple.iTunes:MEDIA')
         self['pretty_media'] = 'OTHER'
-        self['catalog'] = tagchooser(self.audiofile, 'TXXX:CATALOGNUMBER', '----:com.apple.iTunes:CATALOGNUMBER',
-                                     'CATALOGNUMBER')
-        self['musicbrainz_albumid'] = tagchooser(self.audiofile, 'TXXX:MusicBrainz Album Id',
-                                                 '----:com.apple.iTunes:MusicBrainz Album Id', 'MUSICBRAINZ_ALBUMID')
+        self['catalog'] = tagchooser(self.audiofile, 'TXXX:CATALOGNUMBER', 'CATALOGNUMBER', 'BARCODE',
+                                     '----:com.apple.iTunes:CATALOGNUMBER')
+        self['musicbrainz_albumid'] = tagchooser(self.audiofile, 'TXXX:MusicBrainz Album Id', 'MUSICBRAINZ_ALBUMID',
+                                                 '----:com.apple.iTunes:MusicBrainz Album Id')
         self['displayartist'] = 'Unknown Artist'
 
         self.fixmapping()
@@ -114,11 +114,15 @@ class TagChalice(dict):
                 self['pretty_media'] = 'CST'
             elif 'DVD' in self['media']:
                 self['pretty_media'] = 'DVD'
+            elif 'Blu-ray' in self['media']:
+                self['pretty_media'] = 'BD'
             elif 'GameRip' in self['media']:
                 self['pretty_media'] = 'VGR'
 
         if not self['catalog'] or self['catalog'] == '[none]':
             self['catalog'] = 'No Cat#'
+        else:
+            self['catalog'] = self['catalog'].upper()
 
         for tag in ['tracknumber', 'totaltracks', 'discnumber', 'totaldiscs']:
             if self[tag] is None:
