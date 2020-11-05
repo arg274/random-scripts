@@ -31,7 +31,8 @@ class TagChalice(dict):
         self['title'] = tagchooser(self.audiofile, 'TIT2', 'TITLE', '©nam')
         self['artist'] = tagchooser(self.audiofile, 'TPE1', 'ARTIST', '©ART')
         self['album'] = tagchooser(self.audiofile, 'TALB', 'ALBUM', '©alb')
-        self['albumartist'] = tagchooser(self.audiofile, 'STDALBUMARTIST', 'TPE2', 'ALBUMARTIST', 'aART')
+        self['albumartist'] = tagchooser(self.audiofile, 'STDALBUMARTIST', '----:com.apple.iTunes:STDALBUMARTIST',
+                                         'TPE2', 'ALBUMARTIST', 'aART')
         self['tracknumber'] = tagchooser(self.audiofile, 'TRCK', 'TRACKNUMBER', 'trkn')
         self['totaltracks'] = tagchooser(self.audiofile, 'TRACKTOTAL', 'TOTALTRACKS')
         self['discnumber'] = tagchooser(self.audiofile, 'TPOS', 'DISCNUMBER', 'disk')
@@ -43,8 +44,8 @@ class TagChalice(dict):
         self['year'] = '0000'
         self['media'] = tagchooser(self.audiofile, 'TMED', 'MEDIA', '----:com.apple.iTunes:MEDIA')
         self['pretty_media'] = 'OTHER'
-        self['catalog'] = tagchooser(self.audiofile, 'TXXX:CATALOGNUMBER', 'CATALOGNUMBER', 'BARCODE',
-                                     '----:com.apple.iTunes:CATALOGNUMBER')
+        self['catalog'] = tagchooser(self.audiofile, 'TXXX:CATALOGNUMBER', 'CATALOGNUMBER',
+                                     '----:com.apple.iTunes:CATALOGNUMBER', 'BARCODE', '----:com.apple.iTunes:BARCODE')
         self['musicbrainz_albumid'] = tagchooser(self.audiofile, 'TXXX:MusicBrainz Album Id', 'MUSICBRAINZ_ALBUMID',
                                                  '----:com.apple.iTunes:MusicBrainz Album Id')
         self['displayartist'] = 'Unknown Artist'
@@ -212,7 +213,7 @@ def sanitise(node):
     invalidpattern = '[<>:"|?*]'
     invaliddevicenames = '^(CON|PRN|AUX|NUL|COM1|COM2|COM3|COM4|COM5|COM6|' \
                          'COM7|COM8|COM9|LPT1|LPT2|LPT3|LPT4|LPT5|LPT6|LPT7|LPT8|LPT9)$'
-    invalidtrail = '\.+$'
+    invalidtrail = r'\.+$'
     subchar = '_'
 
     phase_one = re.sub(invalidpattern, subchar, node)
