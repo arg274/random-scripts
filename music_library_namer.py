@@ -8,6 +8,7 @@ from pprint import pprint
 
 import mutagen
 from mutagen.mp3 import BitrateMode
+from statistics import mode
 
 logger = logging.getLogger('filetransfer')
 logfilehandler = logging.FileHandler('music_library_namer.log', encoding='utf-8')
@@ -359,8 +360,10 @@ def formatter(filetags, fileinfo):
     # File path merge
     artistdir = sanitise(truncate(artistdir, trunc_charlimit))
     albumdirpre = '{} - {}'.format(artistdir, truncate(filetags['album'], trunc_charlimit))
-    albumdir = "{} ({}) [{} - {}]{}".format(albumdirpre, filetags['year'], filetags['pretty_media'], encoding, catalog)
-    tracknodisc = "{} - {}".format(track, truncate(filetags['title'], trunc_charlimit))
+    albumdir = '{} ({}) [{} - {}]{}'.format(albumdirpre, filetags['year'], filetags['pretty_media'], encoding, catalog)
+    albumdirnoenc = '{} ({}){}'.format(albumdirpre, filetags['year'], catalog)
+    tracknodisc = '{} - {}'.format(track, truncate(filetags['title'], trunc_charlimit))
+    extrafilepadlen = 15 if filetags['totaldiscs'] > 1 else 3
 
     while len(artistdir + albumdir + disc + tracknodisc) > 230:
 
@@ -370,6 +373,28 @@ def formatter(filetags, fileinfo):
 
         trunc_charlimit = trunc_charlimit - 5
         tracknodisc = truncate(tracknodisc, trunc_charlimit)
+
+    if len(artistdir + albumdir + albumdirnoenc) + extrafilepadlen > 230:
+
+        temp_albumdirpre = albumdirpre
+
+        while len(artistdir + albumdir + albumdirnoenc) + extrafilepadlen > 230:
+
+            if ' - ' in temp_albumdirpre:
+                words = temp_albumdirpre.split(' - ', maxsplit=1)[1].split(r'\w')
+                if len(words) == 1 and len(words[0]) <= 10 and ' - ' not in filetags['album']:
+                    temp_albumdirpre = albumdirpre.split(' - ', maxsplit=1)[1]
+                if len(words) == 1 and len(words[0]) <= 10 and ' - ' in filetags['album']:
+                    temp_albumdirpre = temp_albumdirpre.split(' - ', maxsplit=1)[1]
+            else:
+                words = temp_albumdirpre.split(r'\w')
+                if len(words) == 1:
+                    albumdirnoenc = catalog.strip()
+                    break
+
+            trunc_charlimit = trunc_charlimit - 5
+            temp_albumdirpre = truncate(temp_albumdirpre, trunc_charlimit)
+            albumdirnoenc = '{} ({}){}'.format(temp_albumdirpre, filetags['year'], catalog)
 
     if disc == '0' or filetags['totaldiscs'] == 1:
         trackpath = sanitise(tracknodisc)
@@ -382,10 +407,10 @@ def formatter(filetags, fileinfo):
         trackpath = sanitise("{}.{}".format(disc, tracknodisc))
         albumdir = sanitise(albumdir)
 
-    return artistdir, albumdir, trackpath + ext
+    return artistdir, albumdir, albumdirnoenc, trackpath + ext
 
 
-def trackparser(filepath, destroot, dryflag):
+def trackparser(filepath, destroot, extradestroot):
 
     filetags = TagChalice()
     fileinfo = InfoChalice()
@@ -396,32 +421,74 @@ def trackparser(filepath, destroot, dryflag):
     # pprint(filetags)
     filepathroot = os.path.dirname(__file__).replace('/', '\\')
     filepath = os.path.join(filepathroot, filepath)
-    artistdir, albumdir, filename = formatter(filetags, fileinfo)
+    artistdir, albumdir, extraname, filename = formatter(filetags, fileinfo)
     dest = os.path.join(filepathroot, destroot, artistdir, albumdir, filename)
+    destdir = os.path.join(filepathroot, destroot, artistdir, albumdir)
+    extradestprefix = os.path.join(filepathroot, extradestroot, artistdir, albumdir, extraname)
+    extradestdir = os.path.join(filepathroot, extradestroot, artistdir, albumdir)
+
+    return dest, destdir, extradestprefix, extradestdir
+
+
+def movefiles(src, dest, destdir, dryflag):
 
     if os.path.isfile(dest):
         logger.warning('File already exists: ' + dest)
     else:
         try:
             if dryflag is False:
-                os.makedirs(os.path.join(filepathroot, destroot, artistdir, albumdir), exist_ok=True)
-                shutil.move(filepath, dest)
+                os.makedirs(destdir, exist_ok=True)
+                shutil.move(src, dest)
             logger.info('File transferred to: ' + dest)
         except OSError as e:
             logger.error('File transfer failed: ' + str(e))
 
 
-def rootiterator(rootpath, dest, dryflag):
+def rootiterator(rootpath, dest, extradest, dryflag):
 
-    allowedexts = ['mp3', 'flac', 'm4a', 'opus']
+    if extradest is None:
+        extradest = dest
+    allowedexts = re.compile(r'\.(mp3|flac|m4a|opus)$', flags=re.IGNORECASE)
+    logext = '.log'
+    cueext = '.cue'
+    log_blacklist = ['music_library_namer.log']
 
     for root, subdirs, files in os.walk(rootpath):
-        for filename in files:
-            for ext in allowedexts:
-                if filename.endswith(ext):
-                    filepath = os.path.join(root, filename)
-                    trackparser(filepath, dest, dryflag)
-                    break
+
+        logs = sorted([os.path.join(root, log) for log in files if log.endswith(logext) and log not in log_blacklist])
+        cuesheets = sorted([os.path.join(root, cuesheet) for cuesheet in files if cuesheet.endswith(cueext)])
+        audiofiles = [os.path.join(root, audiofile) for audiofile in files if allowedexts.search(audiofile)]
+
+        if audiofiles:
+            print(audiofiles)
+
+            extradestprefixlist = []
+            extradestdirlist = []
+
+            for audiofile in audiofiles:
+                audiofiledest, destdir, extradestprefix, extradestdir = trackparser(audiofile, dest, extradest)
+                extradestprefixlist.append(extradestprefix)
+                extradestdirlist.append(extradestdir)
+                movefiles(audiofile, audiofiledest, destdir, dryflag)
+
+            extradestprefix = mode(extradestprefixlist)
+            extradestdir = mode(extradestdirlist)
+
+            if logs:
+                if len(logs) == 1:
+                    movefiles(logs[0], '{}.{}'.format(extradestprefix, 'log'), extradestdir, dryflag)
+                else:
+                    for lognum in range(1, len(logs) + 1):
+                        movefiles(logs[lognum], '{} (Disc {}).{}'.format(extradestprefix, lognum, 'log'),
+                                  extradestdir, dryflag)
+
+            if cuesheets:
+                if len(cuesheets) == 1:
+                    movefiles(cuesheets[0], extradestprefix + '.cue', extradestdir, dryflag)
+                else:
+                    for cuenum in range(1, len(cuesheets) + 1):
+                        movefiles(cuesheets[cuenum], '{} (Disc {}).{}'.format(extradestprefix, cuenum, 'cue'),
+                                  extradestdir, dryflag)
 
 
 def main():
@@ -429,9 +496,10 @@ def main():
     parser = argparse.ArgumentParser(description='Tool for library structuring')
     parser.add_argument('src', type=str, help='Source dir')
     parser.add_argument('dest', type=str, help='Destination dir')
+    parser.add_argument('--extradest', type=str, default=None,  help='Extrafiles destination dir')
     parser.add_argument('--dry', action='store_true', help='Dry run without transferring the files')
     args = parser.parse_args()
-    rootiterator(args.src, args.dest, args.dry)
+    rootiterator(args.src, args.dest, args.extradest, args.dry)
 
 
 if __name__ == '__main__':
